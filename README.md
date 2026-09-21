@@ -1,54 +1,48 @@
-# Debug Module Controller (`dm_top`)
+<!-- 
+SPDX-License-Identifier: Apache-2.0
+Copyright Maktab-e-Digital Systems Lahore
+-->
+
+# Debug Module State Machines
 
 ## Purpose
-The `dm_top` module serves as the top-level controller for the RISC-V Debug Module (DM) in the MEDS-S1 platform. It acts as the bridge between the external Debug Transport Module (DTM) and the S1-Core, strictly adhering to the RISC-V Debug Specification. 
+This document details the internal state machine architectures for the Debug Module Controller (`dm_controller`). It covers the two primary Finite State Machines (FSMs) that drive the controller's logic: the **Run Control FSM** and the **Abstract Command FSM**. 
 
-This implementation supports Run Control (halt, resume, reset) and Abstract Commands (register and memory access). It intentionally omits the Program Buffer and System Bus Access (SBA) blocks to reduce area, routing all memory and register requests through the hardware datapath (`dm_datapath`).
+These state machines ensure strict compliance with the RISC-V Debug Specification by safely managing hart execution states, handling resets, and orchestrating register accesses without stalling the core pipeline incorrectly.
 
-## Architecture & Interface Contract
+---
 
-![Debug Module Controller Architecture](design/dm_controller.svg)
+## 1. Run Control FSM
 
-The controller is divided into three primary state machines:
-1. **DMI Decoder & Register File**: Decodes 41-bit DMI requests and manages standard DM registers (`dmcontrol`, `dmstatus`, `abstractcs`, `command`, `data0`-`data11`).
-2. **Run Control FSM**: Manages hart execution states, tracking `debug_halted_o` and `debug_running_o`, and issuing `debug_req_i` to the core.
-3. **Abstract Command FSM**: Validates debugger instructions, orchestrates the `cmd_valid`/`cmd_done` handshake with the datapath, and logs any execution errors via `cmderr`.
+The Run Control FSM manages the execution state of the connected S1-Core. It translates debugger requests (via the `dmcontrol` register) into physical control signals while monitoring the core's status.
 
-### Ports
+![Run Control FSM](design/run_control_fsm.svg)
 
-| Port Name | Direction | Width | Description |
-| :--- | :--- | :--- | :--- |
-| **Clock & Reset** | | | |
-| `clk_core` | Input | 1 | Core clock domain (target 100 MHz) |
-| `rst_ni` | Input | 1 | Active-low, asynchronous assert, synchronous de-assert reset |
-| **DMI Interface (via `cdc_fifo`)** | | | |
-| `dmi_req_valid_i` | Input | 1 | DMI request valid signal |
-| `dmi_req_i` | Input | 41 | DMI request bundle (7-bit address + 32-bit data + 2-bit op) |
-| `dmi_req_ready_o` | Output| 1 | Controller ready to accept DMI request |
-| `dmi_resp_valid_o` | Output| 1 | DMI response valid signal |
-| `dmi_resp_o` | Output| 34 | DMI response bundle (32-bit data + 2-bit status) |
-| `dmi_resp_ready_i` | Input | 1 | DTM ready to accept DMI response |
-| **Core Run Control** | | | |
-| `debug_req_i` | Output | 1 | Halt/resume request driven to the S1-Core |
-| `debug_halted_o` | Input | 1 | Status flag indicating the core is halted |
-| `debug_running_o` | Input | 1 | Status flag indicating the core is running |
-| `hartinfo_i` | Input | 1 | Hart ID for multiplexing in multi-hart setups |
-| **Datapath Interface** | | | |
-| `cmdtype` | Output | 8 | Command type (0 = Register, 2 = Memory) |
-| `write` | Output | 1 | 0 for Read, 1 for Write |
-| `acc_size` | Output | 3 | Access size (8, 16, 32, 64, or 128-bit) |
-| `regno` | Output | 16 | Target register address (for `cmdtype` = 0) |
-| `cmd_valid` | Output | 1 | Trigger pulse to start datapath execution |
-| `wdata` | Output | 64 | Data payload to be written to core/memory |
-| `target_addr` | Output | 64 | Target memory address (for `cmdtype` = 2) |
-| `cmd_done` | Input | 1 | Status pulse indicating datapath execution is complete |
-| `rdata` | Input | 64 | Data payload read from core/memory |
-| `cmderr` | Input | 3 | Hardware execution fault code from datapath |
-| **System Reset** | | | |
-| `ndmreset_o` | Output | 1 | Non-debug module reset request to the reset synchronizer |
-| `ndmreset_ack_i` | Input | 1 | Acknowledgment from reset synchronizer |
+### State Descriptions
 
-## Timing & Reset Assumptions
-* **Reset Policy**: Follows MEDS-S1 global policy (asynchronous assert, synchronous de-assert, active-low). No local resets or reset generation inside leaf modules.
-* **`ndmreset`**: Driving `ndmreset_o` high resets the entire SoC platform *except* the Debug Module, DTM, and DMI.
-* **Clock Domain Crossing**: The controller operates entirely within the `clk_core` domain. All asynchronous JTAG signals are safely bridged via the external `cdc_fifo` module prior to reaching `dm_top`.
+*   **NORMAL:** The core is actively executing instructions or waiting for interrupts. The controller outputs `debug_req_i = 0`. It transitions to HALTING if a halt is requested (`haltreq == 1`), a trigger matches (`trigger_match`), an ebreak is hit (`ebreak_match`), or a step completes (`step_match`).
+*   **HALTING:** The controller asserts the halt request to the core (`debug_req_i = 1`). It waits in this state until the core acknowledges the halt (`debug_halted_o == 1`) and the pipeline is fully idle (`x_idle == 1`). This ensures no half-executed operations are observed. Once confirmed, it asserts `core_halted = 1` and moves to HALTED.
+*   **HALTED:** The core is safely in Debug Mode. The controller maintains `debug_req_i = 1`. It remains here until the debugger explicitly clears the halt request and asserts a resume request (`resumereq == 1 & haltreq == 0`).
+*   **RESUMING:** The controller drops the halt request (`debug_req_i = 0`) to allow the core to exit Debug Mode. It waits for the core to confirm it is running again (`debug_running_o == 1`), asserts `core_resumed = 1`, and returns to NORMAL.
+*   **HART RESET:** Entered from any state if a system or hart reset is triggered (`ndmreset | hartreset`). Upon exiting reset, the FSM checks `resethaltreq`. If `resethaltreq == 1`, it forces the core straight into the HALTED state; otherwise, it returns to NORMAL.
+
+---
+
+## 2. Abstract Command FSM
+
+The Abstract Command FSM orchestrates the execution of debug commands written to the `command` register. It controls the `dm_datapath` and manages the `busy` and `cmderr` status flags visible to the debugger.
+
+![Abstract Command FSM](design/abstract_command_fsm.svg)
+
+### State Descriptions
+
+*   **IDLE:** The FSM waits for a new command. The datapath is disabled (`abs_en = 0`, `debug_reg_en = 0`, `debug_mem_en = 0`) and the `busy` bit is `0`. It transitions to DECODE when a new command is triggered (`cmd_en == 1`) and there are no uncleared errors (`cmderr_status == 0`).
+*   **DECODE:** The FSM asserts `busy = 1` to lock out further DMI writes to command registers. It evaluates the `cmdtype` and the core's halt status (`debug_halted_o`). 
+    *   If it is a valid register access (`cmdtype == 0`) and the core is halted (`debug_halted_o == 1`), it proceeds to EXEC_REG.
+    *   If the command type is unsupported (`cmdtype != 0`) or the core is not in the correct state (`debug_halted_o == 0`), it aborts to ERROR WAIT.
+*   **EXEC_REG:** The FSM enables the datapath to perform the register access (`debug_reg_en = 1`, `abs_en = 1`) while keeping `busy = 1`. It waits for the datapath to finish (`debug_reg_ready == 1`). Upon completion, it conditionally increments the register number if auto-increment is enabled (`inc_regno = aarpostincrement`) and returns to IDLE.
+*   **ERROR WAIT:** Entered when a command fails validation. The FSM drops the `busy` flag (`busy = 0`) but asserts `set_cmderr = 1` to log the failure in the `abstractcs` register. It remains locked in this state until the external debugger explicitly clears the error (`cmderr == 0`), after which it returns to IDLE.
+
+## Architectural Constraints & Notes
+* **Command Interlocking:** The `busy` bit serves as a strict hardware interlock. As shown in the Abstract Command FSM, `busy` is asserted immediately in the DECODE state and held through execution. 
+* **Safe Debug Entry:** The Run Control FSM explicitly waits for the `x_idle` signal before transitioning to HALTED. This fulfills the MEDS-S1 specification requirement that GDB must never observe a half-executed coprocessor operation during debug entry.
