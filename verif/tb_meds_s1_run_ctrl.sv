@@ -5,6 +5,7 @@
 
 module tb_meds_s1_run_ctrl;
 
+// Clock and reset
 logic clk_i;
 logic rst_ni;
 
@@ -24,18 +25,18 @@ logic step_match_i;
 // Core status inputs
 logic debug_halted_i;
 logic x_idle_i;
-logic core_halted_i;
 logic debug_running_i;
 
 // Controller outputs
 logic debug_req_o;
+logic core_halted_o;
 logic core_resumed_o;
 
 // Clock generation: 100 MHz (10ns period)
 initial clk_i = 0;
 always #5 clk_i = ~clk_i;
 
-// Instantiate DUT 
+// Instantiate DUT
 meds_s1_run_ctrl dut (
 .clk_i           (clk_i),
 .rst_ni          (rst_ni),
@@ -50,9 +51,9 @@ meds_s1_run_ctrl dut (
 .step_match_i    (step_match_i),
 .debug_halted_i  (debug_halted_i),
 .x_idle_i        (x_idle_i),
-.core_halted_i   (core_halted_i),
 .debug_running_i (debug_running_i),
 .debug_req_o     (debug_req_o),
+.core_halted_o   (core_halted_o),
 .core_resumed_o  (core_resumed_o)
 );
 
@@ -79,7 +80,6 @@ trigger_match_i = 1'b0;
 step_match_i    = 1'b0;
 debug_halted_i  = 1'b0;
 x_idle_i        = 1'b1;
-core_halted_i   = 1'b0;
 debug_running_i = 1'b1;
 
 // Apply Power-on Reset
@@ -110,6 +110,9 @@ assert (dut.state_q == dut.HALTING_E)
 
 // Coprocessor finishes work
 x_idle_i = 1'b1;
+#1; // Allow combinational logic to evaluate
+assert (core_halted_o == 1'b1) 
+  else $fatal(1, "core_halted_o failed to assert as a Mealy output");
 step_clk(1);
 assert (dut.state_q == dut.HALTED_E && debug_req_o == 1'b1)
   else $fatal(1, "Expected HALTED_E after x_idle reached");
@@ -161,5 +164,4 @@ $display("[TB] All tests passed successfully!");
 $finish;
 
 end
-
 endmodule
