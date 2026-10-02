@@ -1,31 +1,32 @@
-`timescale 1ns / 1ps
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Maktab-e-Digital Systems Lahore
 
 module meds_s1_run_ctrl(
-    input logic clk_i,
-    input logic rst_ni,
-    
-    // Global Overrides
-    input logic dmactive_i,
-    input logic ndmreset_i,
-    input logic hartreset_i,
-    
-    // Debug requests and triggers
-    input logic haltreq_i,
-    input logic resumereq_i,
-    input logic resethaltreq_i,
-    input logic ebreak_match_i,
-    input logic trigger_match_i,
-    input logic step_match_i,
-    
-    // Status signals from the Core
-    input  logic debug_halted_i,
-    input  logic x_idle_i,
-    input  logic core_halted_i,
-    input  logic debug_running_i,
-    
-    // Control signals to the Core and DM
-    output logic debug_req_o,
-    output logic core_resumed_o
+input  logic clk_i,
+input  logic rst_ni,
+
+// Global Overrides
+input  logic dmactive_i,
+input  logic ndmreset_i,
+input  logic hartreset_i,
+
+// Debug requests and triggers
+input  logic haltreq_i,
+input  logic resumereq_i,
+input  logic resethaltreq_i,
+input  logic ebreak_match_i,
+input  logic trigger_match_i,
+input  logic step_match_i,
+
+// Status signals from the Core
+input  logic debug_halted_i,
+input  logic x_idle_i,
+input  logic debug_running_i,
+
+// Control signals to the Core and DM
+output logic debug_req_o,
+output logic core_halted_o,
+output logic core_resumed_o
 );
 
 typedef enum logic [2:0] {
@@ -50,7 +51,9 @@ always_comb begin
 // Default assignments to prevent latches
 next_state_d   = state_q;
 debug_req_o    = 1'b0;
+core_halted_o  = 1'b0;
 core_resumed_o = 1'b0;
+
 // Highest priority: Global Debug Module inactive
 if (!dmactive_i) begin
   next_state_d = NORMAL_E;
@@ -70,8 +73,9 @@ end else begin
 
     HALTING_E: begin
       debug_req_o = 1'b1;
-      if ((debug_halted_i & x_idle_i) | core_halted_i) begin
-        next_state_d = HALTED_E;
+      if (debug_halted_i & x_idle_i) begin
+        core_halted_o = 1'b1; // Mealy output for the transition
+        next_state_d  = HALTED_E;
       end
     end
 
