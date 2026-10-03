@@ -1,167 +1,163 @@
+// Copyright 2026 Maktab-e-Digital Systems Lahore.
+// Licensed under the Apache License, Version 2.0, see LICENSE file for details.
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Maktab-e-Digital Systems Lahore
-
-`timescale 1ns / 1ps
+//
+// =============================================================================
+// tb_meds_s1_run_ctrl : unit testbench for meds_s1_run_ctrl
+// =============================================================================
 
 module tb_meds_s1_run_ctrl;
 
-// Clock and reset
-logic clk_i;
-logic rst_ni;
+  logic clk_i;
+  logic rst_ni;
 
-// Global overrides
-logic dmactive_i;
-logic ndmreset_i;
-logic hartreset_i;
+  logic dmactive_i;
+  logic ndmreset_i;
+  logic hartreset_i;
+  logic haltreq_i;
+  logic resumereq_i;
+  logic resethaltreq_i;
+  logic ebreak_match_i;
+  logic trigger_match_i;
+  logic step_match_i;
+  logic debug_halted_i;
+  logic x_idle_i;
+  logic debug_running_i;
 
-// Debug requests and triggers
-logic haltreq_i;
-logic resumereq_i;
-logic resethaltreq_i;
-logic ebreak_match_i;
-logic trigger_match_i;
-logic step_match_i;
+  logic debug_req_o;
+  logic core_halted_o;
+  logic core_resumed_o;
 
-// Core status inputs
-logic debug_halted_i;
-logic x_idle_i;
-logic debug_running_i;
+  int unsigned checks = 0;
+  int unsigned errors = 0;
 
-// Controller outputs
-logic debug_req_o;
-logic core_halted_o;
-logic core_resumed_o;
+  meds_s1_run_ctrl dut (
+    .clk_i           (clk_i),
+    .rst_ni          (rst_ni),
+    .dmactive_i      (dmactive_i),
+    .ndmreset_i      (ndmreset_i),
+    .hartreset_i     (hartreset_i),
+    .haltreq_i       (haltreq_i),
+    .resumereq_i     (resumereq_i),
+    .resethaltreq_i  (resethaltreq_i),
+    .ebreak_match_i  (ebreak_match_i),
+    .trigger_match_i (trigger_match_i),
+    .step_match_i    (step_match_i),
+    .debug_halted_i  (debug_halted_i),
+    .x_idle_i        (x_idle_i),
+    .debug_running_i (debug_running_i),
+    .debug_req_o     (debug_req_o),
+    .core_halted_o   (core_halted_o),
+    .core_resumed_o  (core_resumed_o)
+  );
 
-// Clock generation: 100 MHz (10ns period)
-initial clk_i = 0;
-always #5 clk_i = ~clk_i;
+  // ---------------------------------------------------------------------------
+  // Check helpers
+  // ---------------------------------------------------------------------------
+  task automatic check1(input string name, input logic got, input logic exp);
+    checks++;
+    if (got !== exp) begin
+      errors++;
+      $display("  FAIL %-28s got=%0d exp=%0d", name, got, exp);
+    end
+  endtask
 
-// Instantiate DUT
-meds_s1_run_ctrl dut (
-.clk_i           (clk_i),
-.rst_ni          (rst_ni),
-.dmactive_i      (dmactive_i),
-.ndmreset_i      (ndmreset_i),
-.hartreset_i     (hartreset_i),
-.haltreq_i       (haltreq_i),
-.resumereq_i     (resumereq_i),
-.resethaltreq_i  (resethaltreq_i),
-.ebreak_match_i  (ebreak_match_i),
-.trigger_match_i (trigger_match_i),
-.step_match_i    (step_match_i),
-.debug_halted_i  (debug_halted_i),
-.x_idle_i        (x_idle_i),
-.debug_running_i (debug_running_i),
-.debug_req_o     (debug_req_o),
-.core_halted_o   (core_halted_o),
-.core_resumed_o  (core_resumed_o)
-);
+  initial clk_i = 0;
+  always #5 clk_i = ~clk_i;
 
-// Helper task to cycle clock
-task automatic step_clk(input int cycles = 1);
-repeat (cycles) @(posedge clk_i);
-#1;
-endtask
+  task automatic step_clk(input int cycles = 1);
+    repeat (cycles) @(posedge clk_i);
+    #1;
+  endtask
 
-// Stimulus sequence
-initial begin
-$display("[TB] Starting meds_s1_run_ctrl testbench...");
+  initial begin
+    $display("=== tb_meds_s1_run_ctrl ===");
 
-// Initialize all signals
-rst_ni          = 1'b0;
-dmactive_i      = 1'b0;
-ndmreset_i      = 1'b0;
-hartreset_i     = 1'b0;
-haltreq_i       = 1'b0;
-resumereq_i     = 1'b0;
-resethaltreq_i  = 1'b0;
-ebreak_match_i  = 1'b0;
-trigger_match_i = 1'b0;
-step_match_i    = 1'b0;
-debug_halted_i  = 1'b0;
-x_idle_i        = 1'b1;
-debug_running_i = 1'b1;
+    rst_ni          = 1'b0;
+    dmactive_i      = 1'b0;
+    ndmreset_i      = 1'b0;
+    hartreset_i     = 1'b0;
+    haltreq_i       = 1'b0;
+    resumereq_i     = 1'b0;
+    resethaltreq_i  = 1'b0;
+    ebreak_match_i  = 1'b0;
+    trigger_match_i = 1'b0;
+    step_match_i    = 1'b0;
+    debug_halted_i  = 1'b0;
+    x_idle_i        = 1'b1;
+    debug_running_i = 1'b1;
 
-// Apply Power-on Reset
-step_clk(2);
-rst_ni = 1'b1;
-step_clk(2);
+    step_clk(2);
+    rst_ni = 1'b1;
+    step_clk(2);
 
-// Test 1: Activate Debug Module
-$display("[TB] Test 1: Activate DM");
-dmactive_i = 1'b1;
-step_clk(2);
-assert (dut.state_q == dut.NORMAL_E)
-  else $fatal(1, "Expected NORMAL_E after dmactive assert");
+    // Test 1: Activate DM
+    dmactive_i = 1'b1;
+    step_clk(2);
+    check1("T1: NORMAL_E after dmactive", (dut.state_q == dut.NORMAL_E), 1'b1);
 
-// Test 2: Standard Halt Request with x_idle delay
-$display("[TB] Test 2: Halt request with coprocessor busy");
-haltreq_i = 1'b1;
-step_clk(1);
-assert (dut.state_q == dut.HALTING_E && debug_req_o == 1'b1)
-  else $fatal(1, "Expected HALTING_E with debug_req_o == 1");
+    // Test 2: Halt Request with x_idle delay
+    haltreq_i = 1'b1;
+    step_clk(1);
+    check1("T2: HALTING_E entered", (dut.state_q == dut.HALTING_E), 1'b1);
+    check1("T2: debug_req_o asserted", debug_req_o, 1'b1);
 
-// Core signals halted, but coprocessor is not yet idle (x_idle == 0)
-debug_halted_i = 1'b1;
-x_idle_i       = 1'b0;
-step_clk(2);
-assert (dut.state_q == dut.HALTING_E)
-  else $fatal(1, "FSM exited HALTING_E before x_idle asserted!");
+    debug_halted_i = 1'b1;
+    x_idle_i       = 1'b0;
+    step_clk(2);
+    check1("T2: Stay HALTING_E without idle", (dut.state_q == dut.HALTING_E), 1'b1);
 
-// Coprocessor finishes work
-x_idle_i = 1'b1;
-#1; // Allow combinational logic to evaluate
-assert (core_halted_o == 1'b1) 
-  else $fatal(1, "core_halted_o failed to assert as a Mealy output");
-step_clk(1);
-assert (dut.state_q == dut.HALTED_E && debug_req_o == 1'b1)
-  else $fatal(1, "Expected HALTED_E after x_idle reached");
+    x_idle_i = 1'b1;
+    #1;
+    check1("T2: core_halted_o Mealy assert", core_halted_o, 1'b1);
+    step_clk(1);
+    check1("T2: HALTED_E after x_idle", (dut.state_q == dut.HALTED_E), 1'b1);
+    check1("T2: debug_req_o stays asserted", debug_req_o, 1'b1);
 
-// Test 3: Resume sequence
-$display("[TB] Test 3: Resuming sequence");
-haltreq_i   = 1'b0;
-resumereq_i = 1'b1;
-step_clk(1);
-assert (dut.state_q == dut.RESUMING_E && debug_req_o == 1'b0)
-  else $fatal(1, "Expected RESUMING_E with debug_req_o == 0");
+    // Test 3: Resume sequence
+    haltreq_i   = 1'b0;
+    resumereq_i = 1'b1;
+    step_clk(1);
+    check1("T3: RESUMING_E entered", (dut.state_q == dut.RESUMING_E), 1'b1);
+    check1("T3: debug_req_o deasserted", debug_req_o, 1'b0);
 
-resumereq_i = 1'b0;
-debug_halted_i = 1'b0;
-debug_running_i = 1'b0;
-step_clk(2);
+    resumereq_i = 1'b0;
+    debug_halted_i = 1'b0;
+    debug_running_i = 1'b0;
+    step_clk(2);
 
-// Core signals running again -> check Mealy pulse
-debug_running_i = 1'b1;
-#1;
-assert (core_resumed_o == 1'b1)
-  else $fatal(1, "core_resumed_o failed to assert on running edge");
+    debug_running_i = 1'b1;
+    #1;
+    check1("T3: core_resumed_o Mealy assert", core_resumed_o, 1'b1);
 
-step_clk(1);
-assert (dut.state_q == dut.NORMAL_E && core_resumed_o == 1'b0)
-  else $fatal(1, "Expected transition to NORMAL_E with core_resumed_o deasserted");
+    step_clk(1);
+    check1("T3: NORMAL_E reached", (dut.state_q == dut.NORMAL_E), 1'b1);
+    check1("T3: core_resumed_o deasserted", core_resumed_o, 1'b0);
 
-// Test 4: Hart Reset with resethaltreq = 1
-$display("[TB] Test 4: Hart reset with resethaltreq = 1");
-resethaltreq_i = 1'b1;
-hartreset_i    = 1'b1;
-step_clk(1);
-assert (dut.state_q == dut.HART_RESET_E)
-  else $fatal(1, "Expected HART_RESET_E on hartreset_i");
+    // Test 4: Hart Reset with resethaltreq = 1
+    resethaltreq_i = 1'b1;
+    hartreset_i    = 1'b1;
+    step_clk(1);
+    check1("T4: HART_RESET_E entered", (dut.state_q == dut.HART_RESET_E), 1'b1);
 
-hartreset_i = 1'b0;
-step_clk(1);
-assert (dut.state_q == dut.HALTED_E)
-  else $fatal(1, "Expected direct transition from HART_RESET_E to HALTED_E");
+    hartreset_i = 1'b0;
+    step_clk(1);
+    check1("T4: HALTED_E on reset drop", (dut.state_q == dut.HALTED_E), 1'b1);
 
-// Test 5: dmactive drop forces NORMAL_E
-$display("[TB] Test 5: dmactive == 0 deassertion override");
-dmactive_i = 1'b0;
-step_clk(1);
-assert (dut.state_q == dut.NORMAL_E && debug_req_o == 1'b0)
-  else $fatal(1, "Expected immediate transition to NORMAL_E when dmactive_i = 0");
+    // Test 5: dmactive drop forces NORMAL_E
+    dmactive_i = 1'b0;
+    step_clk(1);
+    check1("T5: NORMAL_E on dmactive=0", (dut.state_q == dut.NORMAL_E), 1'b1);
+    check1("T5: debug_req_o is 0", debug_req_o, 1'b0);
 
-$display("[TB] All tests passed successfully!");
-$finish;
+    // ---------------------------------------------------------------------------
+    if (errors == 0) begin
+      $display("=== PASS : %0d checks ===", checks);
+      $finish;
+    end else begin
+      $display("=== FAIL : %0d errors of %0d checks ===", errors, checks);
+      $fatal(1, "tb_meds_s1_run_ctrl failed");
+    end
+  end
 
-end
 endmodule
