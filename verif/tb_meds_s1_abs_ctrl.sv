@@ -17,7 +17,6 @@ logic aarpostincrement_i;
 
 logic abs_en_o;
 logic debug_reg_en_o;
-logic debug_mem_en_o;
 logic busy_o;
 logic set_cmderr_o;
 logic inc_regno_o;
@@ -37,7 +36,6 @@ meds_s1_abs_ctrl dut (
 .aarpostincrement_i (aarpostincrement_i),
 .abs_en_o           (abs_en_o),
 .debug_reg_en_o     (debug_reg_en_o),
-.debug_mem_en_o     (debug_mem_en_o),
 .busy_o             (busy_o),
 .set_cmderr_o       (set_cmderr_o),
 .inc_regno_o        (inc_regno_o)

@@ -19,7 +19,6 @@ input  logic aarpostincrement_i,
 // Control outputs
 output logic abs_en_o,
 output logic debug_reg_en_o,
-output logic debug_mem_en_o,
 output logic busy_o,
 output logic set_cmderr_o,
 output logic inc_regno_o
@@ -46,7 +45,6 @@ always_comb begin
 next_state_d   = state_q;
 abs_en_o       = 1'b0;
 debug_reg_en_o = 1'b0;
-debug_mem_en_o = 1'b0;
 busy_o         = 1'b0;
 set_cmderr_o   = 1'b0;
 inc_regno_o    = 1'b0;
